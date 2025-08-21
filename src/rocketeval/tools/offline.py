@@ -103,24 +103,29 @@ def run_batch_offline(
     open(output_file, "w").close()
 
     # Process in chunks
-    with ProcessPoolExecutor(max_workers=len(gpu_groups)) as executor:
-        futures = []
-        gpu_id = 0
-        
-        for chunk in pd.read_json(input_file, lines=True, chunksize=chunksize):
-            gpu_start_id = gpu_id % len(gpu_groups)
-            futures.append(
-                executor.submit(process_chunk, chunk, model, gpu_groups[gpu_start_id], **kwargs)
-            )
-            gpu_id += 1
-        
-        # Write results as they complete
-        for future in as_completed(futures):
-            try:
-                results = future.result()
-                results.to_json(output_file, lines=True, orient="records", force_ascii=False, mode="a")
-            except Exception as e:
-                logger.error(f"Error processing chunk: {e}")
+    if len(gpu_groups) == 1:
+      df = pd.read_json(input_file, lines=True)
+      results = process_chunk(df ,model, "0", **kwargs)
+      results.to_json(output_file, lines=True, orient="records", force_ascii=False, mode="a")
+    else:
+      with ProcessPoolExecutor(max_workers=len(gpu_groups)) as executor:
+          futures = []
+          gpu_id = 0
+          
+          for chunk in pd.read_json(input_file, lines=True, chunksize=chunksize):
+              gpu_start_id = gpu_id % len(gpu_groups)
+              futures.append(
+                  executor.submit(process_chunk, chunk, model, gpu_groups[gpu_start_id], **kwargs)
+              )
+              gpu_id += 1
+          
+          # Write results as they complete
+          for future in as_completed(futures):
+              try:
+                  results = future.result()
+                  results.to_json(output_file, lines=True, orient="records", force_ascii=False, mode="a")
+              except Exception as e:
+                  logger.error(f"Error processing chunk: {e}")
 
 
 def get_gpu_groups(parallel_size: int, gpu_ids: str) -> list[str]:
